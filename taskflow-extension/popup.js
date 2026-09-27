@@ -250,54 +250,60 @@
     renderTasks();
   }
 
+  // Single-pass task filtering to avoid multiple array allocations and iterations
   function getFilteredTasks() {
-    let filtered = [...tasks];
+    const active = [];
+    const completed = [];
+    const query = searchQuery;
 
-    if (currentFilter !== 'all') {
-      filtered = filtered.filter(t => t.category === currentFilter);
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+
+      if (currentFilter !== 'all' && task.category !== currentFilter) {
+        continue;
+      }
+
+      if (query && !task.title.toLowerCase().includes(query)) {
+        continue;
+      }
+
+      if (task.completed) {
+        completed.push(task);
+      } else {
+        active.push(task);
+      }
     }
 
-    if (searchQuery) {
-      filtered = filtered.filter(t =>
-        t.title.toLowerCase().includes(searchQuery)
-      );
-    }
-
-    const active = filtered.filter(t => !t.completed);
-    const completed = filtered.filter(t => t.completed);
-
-    return [...active, ...completed];
+    return active.concat(completed);
   }
 
-  function formatDate(dateStr) {
+  // Optimized date formatting accepting pre-calculated today and tomorrow boundaries
+  function formatDate(dateStr, today, tomorrow) {
     if (!dateStr) return '';
     const date = new Date(dateStr);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
     const dateOnly = new Date(date);
     dateOnly.setHours(0, 0, 0, 0);
 
-    if (dateOnly.getTime() === today.getTime()) {
+    const todayTime = today.getTime();
+    const tomorrowTime = tomorrow.getTime();
+    const dateTime = dateOnly.getTime();
+
+    if (dateTime === todayTime) {
       return 'Today';
-    } else if (dateOnly.getTime() === tomorrow.getTime()) {
+    } else if (dateTime === tomorrowTime) {
       return 'Tomorrow';
-    } else if (dateOnly < today) {
-      const days = Math.floor((today - dateOnly) / (1000 * 60 * 60 * 24));
+    } else if (dateTime < todayTime) {
+      const days = Math.floor((todayTime - dateTime) / (1000 * 60 * 60 * 24));
       return `${days} day${days > 1 ? 's' : ''} ago`;
     }
 
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
-  function isOverdue(dateStr) {
+  // Optimized overdue check accepting pre-calculated today boundary
+  function isOverdue(dateStr, today) {
     if (!dateStr) return false;
-    const date = new Date(dateStr);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return date < today;
+    return new Date(dateStr) < today;
   }
 
   function renderTasks() {
@@ -311,8 +317,14 @@
 
     elements.emptyState.classList.remove('active');
 
+    // Pre-calculate date boundaries once per render cycle instead of once per task
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
     elements.taskList.innerHTML = filtered.map(task => {
-      const overdueClass = task.dueDate && isOverdue(task.dueDate) ? 'overdue' : '';
+      const overdueClass = task.dueDate && isOverdue(task.dueDate, today) ? 'overdue' : '';
       const completedClass = task.completed ? 'completed' : '';
 
       return `
@@ -339,7 +351,7 @@
                     <line x1="8" y1="2" x2="8" y2="6"></line>
                     <line x1="3" y1="10" x2="21" y2="10"></line>
                   </svg>
-                  ${formatDate(task.dueDate)}
+                  ${formatDate(task.dueDate, today, tomorrow)}
                 </span>
               ` : ''}
             </div>
